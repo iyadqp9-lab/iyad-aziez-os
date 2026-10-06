@@ -1,63 +1,29 @@
-name: Build iyad aziez os
+env:
+  CIRRUS_CLONE_DEPTH: 1
 
-on:
-  push:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
+task:
+  name: Build iyad aziez os
+  timeout_in: 120m
+  container:
+    image: ubuntu:20.04
+    cpu: 8
+    memory: 24G
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+  setup_environment_script:
+    - apt-get update && apt-get install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig
+    - mkdir -p ~/bin
+    - curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+    - chmod a+x ~/bin/repo
+    - export PATH="~/bin:$PATH"
 
-    - name: Set up Crave CLI
-      run: |
-        mkdir -p ${HOME}/bin
-        curl -s https://raw.githubusercontent.com/accupara/crave/main/get_crave.sh | bash -s -- ${HOME}/bin
-        echo "${HOME}/bin" >> $GITHUB_PATH
-        
-        mkdir -p ${HOME}/.crave
-        echo "[crave]" > ${HOME}/.crave/crave.conf
-        echo "username = ${{ secrets.CRAVE_USERNAME }}" >> ${HOME}/.crave/crave.conf
-        echo "password = ${{ secrets.CRAVE_PASSWORD }}" >> ${HOME}/.crave/crave.conf
-
-    - name: Initialize and Customize ROM with Magisk (iyad aziez os)
-      run: |
-        crave run -- "
-        repo init -u https://github.com/LineageOS/android.git -b lineage-16.0 --git-lfs --depth=1
-        
-        mkdir -p .repo/local_manifests
-        curl -o .repo/local_manifests/gt58lte.xml https://raw.githubusercontent.com/${{ github.repository }}/main/.repo/local_manifests/gt58lte.xml
-        
-        repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags
-        
-        #  iyad aziez os
-        sed -i 's/PRODUCT_PROPERTY_OVERRIDES += \\/PRODUCT_PROPERTY_OVERRIDES += \\\\n    ro.modversion=iyad_aziez_os_9.0 \\\\n    ro.lineage.version=iyad_aziez_os_gt58lte \\\\n    /g' vendor/lineage/config/common.mk
-        
-        # تفعيل Root الأساسي
-        export WITH_SU=true
-        sed -i 's/export WITH_SU=.*/export WITH_SU=true/g' vendor/lineage/config/common.mk
-        
-        # تحميل وتجهيز ملف Magisk تلقائياً داخل البناء
-        mkdir -p vendor/extra
-        curl -Lo vendor/extra/Magisk.zip https://github.com/topjohnwu/Magisk/releases/download/v27.0/Magisk-v27.0.apk
-        
-        source build/envsetup.sh
-        lunch lineage_gt58lte-userdebug
-        mka bacon -j\$(nproc --all)
-        "
-
-    - name: Pull build output from Crave
-      run: |
-        crave pull devicename/*.zip || true
-
-    - name: Upload System ZIP to GitHub Releases
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: "v1.0-${{ github.run_id }}"
-        name: "iyad aziez os v1.0 (With Root & Magisk)"
-        files: "*.zip"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  build_script:
+    - export PATH="~/bin:$PATH"
+    - repo init -u https://github.com/LineageOS/android.git -b lineage-16.0 --git-lfs --depth=1
+    - mkdir -p .repo/local_manifests
+    - curl -o .repo/local_manifests/gt58lte.xml https://raw.githubusercontent.com/$CIRRUS_REPO_FULL_NAME/main/.repo/local_manifests/gt58lte.xml
+    - repo sync -c -j8 --force-sync --no-clone-bundle --no-tags
+    - sed -i 's/PRODUCT_PROPERTY_OVERRIDES += \\/PRODUCT_PROPERTY_OVERRIDES += \\\\n    ro.modversion=iyad_aziez_os_9.0 \\\\n    ro.lineage.version=iyad_aziez_os_gt58lte \\\\n    /g' vendor/lineage/config/common.mk
+    - export WITH_SU=true
+    - source build/envsetup.sh
+    - lunch lineage_gt58lte-userdebug
+    - mka bacon -j8
