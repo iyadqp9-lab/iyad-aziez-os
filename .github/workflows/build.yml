@@ -1,29 +1,49 @@
-env:
-  CIRRUS_CLONE_DEPTH: 1
+name: Build ROM via Crave
 
-task:
-  name: Build iyad aziez os
-  timeout_in: 120m
-  container:
-    image: ubuntu:20.04
-    cpu: 8
-    memory: 24G
+on:
+  workflow_dispatch:
 
-  setup_environment_script:
-    - apt-get update && apt-get install -y git-core gnupg flex bison build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig
-    - mkdir -p ~/bin
-    - curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-    - chmod a+x ~/bin/repo
-    - export PATH="~/bin:$PATH"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-  build_script:
-    - export PATH="~/bin:$PATH"
-    - repo init -u https://github.com/LineageOS/android.git -b lineage-16.0 --git-lfs --depth=1
-    - mkdir -p .repo/local_manifests
-    - curl -o .repo/local_manifests/gt58lte.xml https://raw.githubusercontent.com/$CIRRUS_REPO_FULL_NAME/main/.repo/local_manifests/gt58lte.xml
-    - repo sync -c -j8 --force-sync --no-clone-bundle --no-tags
-    - sed -i 's/PRODUCT_PROPERTY_OVERRIDES += \\/PRODUCT_PROPERTY_OVERRIDES += \\\\n    ro.modversion=iyad_aziez_os_9.0 \\\\n    ro.lineage.version=iyad_aziez_os_gt58lte \\\\n    /g' vendor/lineage/config/common.mk
-    - export WITH_SU=true
-    - source build/envsetup.sh
-    - lunch lineage_gt58lte-userdebug
-    - mka bacon -j8
+    - name: Setup Crave CLI
+      run: |
+        curl -s https://raw.githubusercontent.com/accupara/crave/main/get_crave.sh | bash
+        sudo mv crave /usr/local/bin/
+
+    - name: Create Crave Auth File
+      run: |
+        mkdir -p ~/.config/crave
+        cat <<EOF > ~/.config/crave/crave.json
+        {
+          "username": "${{ secrets.CRAVE_USERNAME }}",
+          "token": "${{ secrets.CRAVE_PASSWORD }}"
+        }
+        EOF
+
+    - name: Run ROM Build on Crave
+      run: |
+        crave run -- "repo init -u https://github.com/LineageOS/android.git -b lineage-16.0 --git-lfs --depth=1 && \
+        mkdir -p .repo/local_manifests && \
+        curl -o .repo/local_manifests/gt58lte.xml https://raw.githubusercontent.com/${{ github.repository }}/main/.repo/local_manifests/gt58lte.xml && \
+        repo sync -c -j8 --force-sync --no-clone-bundle --no-tags && \
+        source build/envsetup.sh && \
+        lunch lineage_gt58lte-userdebug && \
+        mka bacon -j\$(nproc)"
+
+    - name: Pull ZIP File from Crave
+      run: |
+        crave pull out/target/product/gt58lte/*.zip || true
+
+    - name: Upload System ZIP to GitHub Releases
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: "v1.0-${{ github.run_id }}"
+        name: "iyad aziez os v1.0"
+        files: "*.zip"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
