@@ -12,8 +12,12 @@ jobs:
 
     - name: Setup Crave CLI
       run: |
-        curl -s https://raw.githubusercontent.com/accupara/crave/main/get_crave.sh | bash
-        sudo mv crave /usr/local/bin/
+        mkdir -p $HOME/bin
+        curl -shttps://raw.githubusercontent.com/accupara/crave/main/get_crave.sh | bash
+        if [ -f crave ]; then
+          mv crave $HOME/bin/
+        fi
+        echo "$HOME/bin" >> $GITHUB_PATH
 
     - name: Create Crave Auth File
       run: |
